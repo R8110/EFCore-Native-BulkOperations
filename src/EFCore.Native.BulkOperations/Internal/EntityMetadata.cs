@@ -77,6 +77,12 @@ internal class EntityMetadata
             var isIdentity = valueGenerationStrategy == SqlServerValueGenerationStrategy.IdentityColumn;
             var isPrimaryKey = primaryKeyPropertyNames.Contains(property.Name);
             var valueConverter = property.GetValueConverter();
+            
+            // Get column type information
+            var columnType = property.GetColumnType(storeObject);
+            var maxLength = property.GetMaxLength();
+            var precision = property.GetPrecision();
+            var scale = property.GetScale();
 
             var mapping = new PropertyMapping(
                 property.Name,
@@ -87,7 +93,11 @@ internal class EntityMetadata
                 isIdentity,
                 isComputed,
                 property.IsNullable,
-                valueConverter);
+                valueConverter,
+                columnType,
+                maxLength,
+                precision,
+                scale);
 
             properties.Add(mapping);
 
@@ -129,6 +139,10 @@ internal class PropertyMapping
     public bool IsComputed { get; }
     public bool IsNullable { get; }
     public Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter? ValueConverter { get; }
+    public string? ColumnType { get; }
+    public int? MaxLength { get; }
+    public int? Precision { get; }
+    public int? Scale { get; }
 
     public PropertyMapping(
         string propertyName,
@@ -139,7 +153,11 @@ internal class PropertyMapping
         bool isIdentity,
         bool isComputed,
         bool isNullable,
-        Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter? valueConverter)
+        Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter? valueConverter,
+        string? columnType = null,
+        int? maxLength = null,
+        int? precision = null,
+        int? scale = null)
     {
         PropertyName = propertyName;
         ColumnName = columnName;
@@ -150,6 +168,10 @@ internal class PropertyMapping
         IsComputed = isComputed;
         IsNullable = isNullable;
         ValueConverter = valueConverter;
+        ColumnType = columnType;
+        MaxLength = maxLength;
+        Precision = precision;
+        Scale = scale;
     }
 
     public object? GetValue(object entity)

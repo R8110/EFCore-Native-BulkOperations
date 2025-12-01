@@ -45,8 +45,10 @@ public class BulkConfig
     public bool EnableStreaming { get; set; } = true;
 
     /// <summary>
-    /// Gets or sets whether to preserve insert order.
-    /// When true, the order of entities in the source collection is preserved.
+    /// Gets or sets whether to preserve insert order when retrieving identity values.
+    /// When true and SetOutputIdentity is also true, the identity values will be matched
+    /// to entities based on their order in the source collection.
+    /// Note: This option is automatically enabled when SetOutputIdentity is true.
     /// Default is false.
     /// </summary>
     public bool PreserveInsertOrder { get; set; } = false;

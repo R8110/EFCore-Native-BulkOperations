@@ -83,8 +83,6 @@ public class BulkOperations : IBulkOperations
         var options = SqlBulkCopyOptions.Default;
         if (config.UseTableLock)
             options |= SqlBulkCopyOptions.TableLock;
-        if (config.PreserveInsertOrder)
-            options |= SqlBulkCopyOptions.KeepIdentity;
 
         using var bulkCopy = new SqlBulkCopy(connection, options, transaction)
         {
@@ -608,6 +606,12 @@ public class BulkOperations : IBulkOperations
 
     private static string GetSqlType(PropertyMapping property)
     {
+        // If we have explicit column type from EF Core, use it
+        if (!string.IsNullOrEmpty(property.ColumnType))
+        {
+            return property.ColumnType;
+        }
+
         var type = property.ClrType;
         var underlyingType = Nullable.GetUnderlyingType(type) ?? type;
 
@@ -616,14 +620,23 @@ public class BulkOperations : IBulkOperations
         if (underlyingType == typeof(short)) return "SMALLINT";
         if (underlyingType == typeof(byte)) return "TINYINT";
         if (underlyingType == typeof(bool)) return "BIT";
-        if (underlyingType == typeof(decimal)) return "DECIMAL(18,4)";
+        if (underlyingType == typeof(decimal))
+        {
+            var precision = property.Precision ?? 18;
+            var scale = property.Scale ?? 2;
+            return $"DECIMAL({precision},{scale})";
+        }
         if (underlyingType == typeof(double)) return "FLOAT";
         if (underlyingType == typeof(float)) return "REAL";
         if (underlyingType == typeof(DateTime)) return "DATETIME2";
         if (underlyingType == typeof(DateTimeOffset)) return "DATETIMEOFFSET";
         if (underlyingType == typeof(TimeSpan)) return "TIME";
         if (underlyingType == typeof(Guid)) return "UNIQUEIDENTIFIER";
-        if (underlyingType == typeof(string)) return "NVARCHAR(MAX)";
+        if (underlyingType == typeof(string))
+        {
+            var maxLength = property.MaxLength;
+            return maxLength.HasValue ? $"NVARCHAR({maxLength.Value})" : "NVARCHAR(MAX)";
+        }
         if (underlyingType == typeof(byte[])) return "VARBINARY(MAX)";
 
         return "NVARCHAR(MAX)";
