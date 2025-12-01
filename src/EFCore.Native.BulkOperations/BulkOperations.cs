@@ -123,7 +123,7 @@ public class BulkOperations : IBulkOperations
     {
         var identityProperty = metadata.IdentityProperty!;
 
-        // Create a temp table to store inserted identities
+        // Create a temp table to store data with row numbers
         var tempTableName = $"#TempBulkInsert_{Guid.NewGuid():N}";
         var columnsForTempTable = new StringBuilder();
         var columnsForInsert = new StringBuilder();
@@ -147,9 +147,6 @@ public class BulkOperations : IBulkOperations
             isFirst = false;
         }
 
-        // Add identity column to temp table for output
-        columnsForTempTable.Append($", [{identityProperty.ColumnName}] {GetSqlType(identityProperty)} NULL");
-
         // Create temp table
         var createTempTableSql = $"CREATE TABLE {tempTableName} ({columnsForTempTable})";
         using (var cmd = new SqlCommand(createTempTableSql, connection, transaction))
@@ -160,9 +157,6 @@ public class BulkOperations : IBulkOperations
         try
         {
             // Bulk insert into temp table with row numbers
-            var propertiesWithRowNumber = new List<PropertyMapping>(properties);
-            var rowNumberProperty = new RowNumberPropertyMapping(entities);
-            
             using var bulkCopy = new SqlBulkCopy(connection, SqlBulkCopyOptions.Default, transaction)
             {
                 DestinationTableName = tempTableName,
@@ -182,21 +176,17 @@ public class BulkOperations : IBulkOperations
             using var reader = new EntityDataReaderWithRowNumber<T>(entities, properties);
             await bulkCopy.WriteToServerAsync(reader, cancellationToken);
 
-            // Insert from temp table to actual table and capture identities
-            var insertSql = $@"
-                INSERT INTO {metadata.FullTableName} ({columnsSelect})
-                OUTPUT inserted.[{identityProperty.ColumnName}], t.[__RowNumber]
-                INTO @OutputTable
-                SELECT {columnsSelect}
-                FROM {tempTableName} t
-                ORDER BY t.[__RowNumber]";
+            // Use MERGE to insert and capture identities with row numbers
+            var mergeSql = $@"
+                MERGE {metadata.FullTableName} AS T
+                USING {tempTableName} AS S
+                ON 1 = 0
+                WHEN NOT MATCHED THEN
+                    INSERT ({columnsSelect})
+                    VALUES ({string.Join(", ", properties.Select(p => $"S.[{p.ColumnName}]"))})
+                OUTPUT inserted.[{identityProperty.ColumnName}], S.[__RowNumber];";
 
-            var outputTableSql = $@"
-                DECLARE @OutputTable TABLE ([{identityProperty.ColumnName}] {GetSqlType(identityProperty)}, [__RowNumber] INT);
-                {insertSql};
-                SELECT [{identityProperty.ColumnName}], [__RowNumber] FROM @OutputTable ORDER BY [__RowNumber];";
-
-            using var insertCmd = new SqlCommand(outputTableSql, connection, transaction);
+            using var insertCmd = new SqlCommand(mergeSql, connection, transaction);
             using var reader2 = await insertCmd.ExecuteReaderAsync(cancellationToken);
 
             var entityArray = entities.ToArray();
@@ -637,15 +627,6 @@ public class BulkOperations : IBulkOperations
         if (underlyingType == typeof(byte[])) return "VARBINARY(MAX)";
 
         return "NVARCHAR(MAX)";
-    }
-
-    /// <summary>
-    /// Helper class to represent a virtual row number property mapping.
-    /// </summary>
-    private class RowNumberPropertyMapping
-    {
-        private readonly object _entities;
-        public RowNumberPropertyMapping(object entities) => _entities = entities;
     }
 }
 
